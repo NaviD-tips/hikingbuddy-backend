@@ -178,12 +178,14 @@ router.post('/:id/entries', auth, async (req, res) => {
     }
 
     // Validate expenses
-    if (!expenses || !Array.isArray(expenses) || expenses.length === 0) {
-      return res.status(400).json({ message: 'At least one expense is required' });
+    if (!expenses || !Array.isArray(expenses)) {
+      return res.status(400).json({ message: 'Expenses must be an array' });
     }
 
     // Calculate total money spent
-    const moneySpent = expenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
+    const moneySpent = expenses && expenses.length > 0 
+    ? expenses.reduce((sum, exp) => sum + (exp.amount || 0), 0) 
+    : 0;
 
     const entry = new HikeEntry({
       hikeId: req.params.id,
