@@ -189,6 +189,33 @@ router.post('/:id/entries', auth, async (req, res) => {
     ? expenses.reduce((sum, exp) => sum + (exp.amount || 0), 0) 
     : 0;
 
+    // Check if entry already exists for this date (prevents duplicates from sync)
+    const existingEntry = await HikeEntry.findOne({
+      hikeId: req.params.id,
+      userId: req.user.id,
+      date: new Date(date)
+    });
+
+    if (existingEntry) {
+      // Update existing entry instead of creating duplicate
+      existingEntry.kmTravelled = kmTravelled || 0;
+      existingEntry.rpe = rpe;
+      existingEntry.expenses = expenses;
+      existingEntry.moneySpent = moneySpent;
+      existingEntry.mood = mood;
+      existingEntry.sleepQuality = sleepQuality;
+      existingEntry.overallFeeling = overallFeeling;
+      existingEntry.caloriesSpent = caloriesSpent;
+      existingEntry.weatherTemp = weatherTemp;
+      existingEntry.weatherType = weatherType;
+      existingEntry.notes = notes;
+      existingEntry.locationFrom = locationFrom || { name: '', lat: null, lng: null };
+      existingEntry.locationTo = locationTo || { name: '', lat: null, lng: null };
+      
+      await existingEntry.save();
+      return res.status(200).json(existingEntry);
+    }
+
     const entry = new HikeEntry({
       hikeId: req.params.id,
       userId: req.user.id,
