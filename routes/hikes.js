@@ -190,12 +190,21 @@ router.post('/:id/entries', auth, async (req, res) => {
     : 0;
 
     // Check if entry already exists for this date (prevents duplicates from sync)
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
     const existingEntry = await HikeEntry.findOne({
       hikeId: req.params.id,
       userId: req.user.id,
-      date: new Date(date)
+      date: {
+        $gte: startOfDay,
+        $lte: endOfDay
+      }
     });
-
+    
     if (existingEntry) {
       // Update existing entry instead of creating duplicate
       existingEntry.kmTravelled = kmTravelled || 0;
