@@ -168,7 +168,9 @@ router.post('/:id/entries', auth, async (req, res) => {
       caloriesSpent,
       weatherTemp,
       weatherType,
-      notes
+      notes,
+      locationFrom,
+      locationTo  
     } = req.body;
 
     // Validation
@@ -201,7 +203,9 @@ router.post('/:id/entries', auth, async (req, res) => {
       caloriesSpent,
       weatherTemp,
       weatherType,
-      notes
+      notes,
+      locationFrom: locationFrom || { name: '', lat: null, lng: null }, 
+      locationTo: locationTo || { name: '', lat: null, lng: null }  
     });
 
     await entry.save();
@@ -241,6 +245,14 @@ router.put('/:hikeId/entries/:entryId', auth, async (req, res) => {
       if (req.body.expenses && Array.isArray(req.body.expenses)) {
         entry.expenses = req.body.expenses;
         entry.moneySpent = req.body.expenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
+      }
+
+      // Handle locations separately (like expenses)
+      if (req.body.locationFrom) {
+        entry.locationFrom = req.body.locationFrom;
+      }
+      if (req.body.locationTo) {
+        entry.locationTo = req.body.locationTo;
       }
 
     await entry.save();

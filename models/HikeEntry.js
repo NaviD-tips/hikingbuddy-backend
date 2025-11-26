@@ -80,6 +80,34 @@ const hikeEntrySchema = new mongoose.Schema({
   notes: {  
     type: String,
     default: ''
+  },
+  locationFrom: {
+    name: {
+      type: String,
+      default: ''
+    },
+    lat: {
+      type: Number,
+      default: null
+    },
+    lng: {
+      type: Number,
+      default: null
+    }
+  },
+  locationTo: {
+    name: {
+      type: String,
+      default: ''
+    },
+    lat: {
+      type: Number,
+      default: null
+    },
+    lng: {
+      type: Number,
+      default: null
+    }
   }
 }, {
   timestamps: true
