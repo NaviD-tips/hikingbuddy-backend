@@ -2,10 +2,10 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-
+const travelRoutes = require('./routes/travel');
 const app = express();
 
-// Middleware
+
 // Middleware
 app.use(cors({
   origin: function(origin, callback) {
@@ -21,6 +21,7 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
+app.use('/api/travel', travelRoutes);
 
 // MongoDB Connection
 mongoose.connect(process.env.MONGODB_URI, {
