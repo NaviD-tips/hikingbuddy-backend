@@ -2,9 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const travelRoutes = require('./routes/travel');
-const app = express();
 
+const app = express();
 
 // Middleware
 app.use(cors({
@@ -21,7 +20,6 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
-app.use('/api/travel', travelRoutes);
 
 // MongoDB Connection
 mongoose.connect(process.env.MONGODB_URI, {
@@ -31,12 +29,14 @@ mongoose.connect(process.env.MONGODB_URI, {
 .then(() => console.log('✅ MongoDB Connected'))
 .catch(err => console.error('❌ MongoDB Connection Error:', err));
 
-// Routes
-const authRoutes = require('./routes/auth');
-const hikeRoutes = require('./routes/hikes');
+// Routes — all required after mongoose setup
+const authRoutes   = require('./routes/auth');
+const hikeRoutes   = require('./routes/hikes');
+const travelRoutes = require('./routes/travel');
 
-app.use('/api/auth', authRoutes);
-app.use('/api/hikes', hikeRoutes);
+app.use('/api/auth',   authRoutes);
+app.use('/api/hikes',  hikeRoutes);
+app.use('/api/travel', travelRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
