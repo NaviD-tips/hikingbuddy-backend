@@ -3,6 +3,11 @@ const router = express.Router();
 const TravelItinerary = require('../models/TravelItinerary');
 const auth = require('../middleware/auth');
 
+// Diagnostic log — remove once working
+console.log('TravelItinerary type:', typeof TravelItinerary);
+console.log('TravelItinerary value:', TravelItinerary);
+console.log('Has findOne?', typeof TravelItinerary?.findOne);
+
 // ── GET /api/travel/itinerary
 // Returns the full itinerary for the logged-in user
 router.get('/itinerary', auth, async (req, res) => {
