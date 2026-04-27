@@ -30,13 +30,15 @@ mongoose.connect(process.env.MONGODB_URI, {
 .catch(err => console.error('❌ MongoDB Connection Error:', err));
 
 // Routes — all required after mongoose setup
-const authRoutes   = require('./routes/auth');
-const hikeRoutes   = require('./routes/hikes');
-const travelRoutes = require('./routes/travel');
+const authRoutes     = require('./routes/auth');
+const hikeRoutes     = require('./routes/hikes');
+const travelRoutes   = require('./routes/travel');
+const travelAIRoutes = require('./routes/travelAI');     
 
-app.use('/api/auth',   authRoutes);
-app.use('/api/hikes',  hikeRoutes);
-app.use('/api/travel', travelRoutes);
+app.use('/api/auth',      authRoutes);
+app.use('/api/hikes',     hikeRoutes);
+app.use('/api/travel',    travelRoutes);
+app.use('/api/travel/ai', travelAIRoutes);              
 
 // Health check
 app.get('/api/health', (req, res) => {
