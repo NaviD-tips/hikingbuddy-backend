@@ -4,6 +4,11 @@ const Hike = require('../models/Hike');
 const HikeEntry = require('../models/HikeEntry');
 const auth = require('../middleware/auth');
 
+// Health check - no auth required
+router.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
+
 // Get all hikes for the authenticated user
 router.get('/', auth, async (req, res) => {
   try {
