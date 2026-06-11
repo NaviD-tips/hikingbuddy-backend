@@ -9,7 +9,7 @@ const messageSchema = new mongoose.Schema({
   displayText: { type: String, default: '' },
   attachments: [{
     name: String,
-    type: String,
+    mimeType: String,
     size: Number
   }],
   thinking: { type: String, default: '' },

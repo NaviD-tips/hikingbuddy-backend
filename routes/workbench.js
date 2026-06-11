@@ -181,7 +181,7 @@ router.post('/conversations/:id/message', auth, gateKeeper, upload.array('files'
     for (const f of files) {
       const txt = await extractFileText(f);
       combinedText += `<attached_file name="${f.originalname}">\n${txt}\n</attached_file>\n\n`;
-      attachmentMeta.push({ name: f.originalname, type: f.mimetype, size: f.size });
+      attachmentMeta.push({ name: f.originalname, mimeType: f.mimetype, size: f.size });
     }
     combinedText += userText;
 
