@@ -33,12 +33,14 @@ mongoose.connect(process.env.MONGODB_URI, {
 const authRoutes     = require('./routes/auth');
 const hikeRoutes     = require('./routes/hikes');
 const travelRoutes   = require('./routes/travel');
-const travelAIRoutes = require('./routes/travelAI');     
+const travelAIRoutes = require('./routes/travelAI');
+const workbenchRoutes = require('./routes/workbench');     
 
 app.use('/api/auth',      authRoutes);
 app.use('/api/hikes',     hikeRoutes);
 app.use('/api/travel',    travelRoutes);
-app.use('/api/travel/ai', travelAIRoutes);              
+app.use('/api/travel/ai', travelAIRoutes);  
+app.use('/api/workbench', workbenchRoutes);            
 
 // Health check
 app.get('/api/health', (req, res) => {
