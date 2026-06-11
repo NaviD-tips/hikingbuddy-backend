@@ -10,7 +10,11 @@ const messageSchema = new mongoose.Schema({
   attachments: [{
     name: String,
     mimeType: String,
-    size: Number
+    size: Number,
+    // For .docx uploads only — the original binary, used as a pandoc
+    // reference-doc when exporting assistant responses to Word.
+    // Null/absent for other file types (XML, BPMN, text).
+    binary: { type: Buffer, default: null }
   }],
   thinking: { type: String, default: '' },
   usage: {

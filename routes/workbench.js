@@ -3,6 +3,13 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const mammoth = require('mammoth');
+const fs = require('fs');
+const fsp = require('fs').promises;
+const path = require('path');
+const os = require('os');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
 const Conversation = require('../models/Conversation');
 const auth = require('../middleware/auth');
 
@@ -11,8 +18,11 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 } // 50 MB per file
 });
 
+// Pandoc lives at ./bin/pandoc (installed by scripts/install-pandoc.sh during Render build).
+// Override via env var PANDOC_PATH if installed elsewhere (e.g. dev machine).
+const PANDOC = process.env.PANDOC_PATH || path.resolve(__dirname, '..', 'bin', 'pandoc');
+
 // ── Hidden access: only listed usernames can use the workbench ──
-// Set WORKBENCH_USERS env var on Render to a comma-separated list, e.g. "clintmorrison"
 const ALLOWED = (process.env.WORKBENCH_USERS || '')
   .split(',').map(s => s.trim()).filter(Boolean);
 
@@ -77,17 +87,18 @@ function buildSystem(conv) {
   return [{ type: 'text', text: base, cache_control: { type: 'ephemeral' } }];
 }
 
-async function extractFileText(file) {
+// Returns { text, keepBinary } — keepBinary is true for .docx (we store the
+// original to use as a pandoc reference-doc during export).
+async function extractFileContent(file) {
   const name = file.originalname || 'file';
   const lower = name.toLowerCase();
-  const buffer = file.buffer;
 
   if (lower.endsWith('.docx')) {
-    const result = await mammoth.extractRawText({ buffer });
-    return result.value;
+    const result = await mammoth.extractRawText({ buffer: file.buffer });
+    return { text: result.value, keepBinary: true };
   }
   // .bpmn, .xml, .txt, .md, .json, .csv, .html, etc — treat as UTF-8 text
-  return buffer.toString('utf8');
+  return { text: file.buffer.toString('utf8'), keepBinary: false };
 }
 
 // ── List conversations ──
@@ -104,11 +115,21 @@ router.get('/conversations', auth, gateKeeper, async (req, res) => {
   }
 });
 
-// ── Get one conversation (full messages) ──
+// ── Get one conversation ──
+// We strip binary blobs from the response so the JSON payload stays light —
+// the UI doesn't need the docx binary, only the backend does (for export).
 router.get('/conversations/:id', auth, gateKeeper, async (req, res) => {
   try {
-    const conv = await Conversation.findOne({ _id: req.params.id, userId: req.user.id });
+    const conv = await Conversation.findOne({ _id: req.params.id, userId: req.user.id }).lean();
     if (!conv) return res.status(404).json({ message: 'Not found' });
+    // Strip binary fields from attachments before sending to client
+    if (conv.messages) {
+      conv.messages.forEach(m => {
+        if (m.attachments) {
+          m.attachments.forEach(a => { delete a.binary; });
+        }
+      });
+    }
     res.json(conv);
   } catch (e) {
     res.status(500).json({ message: e.message });
@@ -144,9 +165,15 @@ router.patch('/conversations/:id', auth, gateKeeper, async (req, res) => {
     const conv = await Conversation.findOneAndUpdate(
       { _id: req.params.id, userId: req.user.id },
       updates,
-      { new: true }
+      { new: true, lean: true }
     );
     if (!conv) return res.status(404).json({ message: 'Not found' });
+    // Strip binaries from response
+    if (conv.messages) {
+      conv.messages.forEach(m => {
+        if (m.attachments) m.attachments.forEach(a => { delete a.binary; });
+      });
+    }
     res.json(conv);
   } catch (e) {
     res.status(500).json({ message: e.message });
@@ -175,17 +202,20 @@ router.post('/conversations/:id/message', auth, gateKeeper, upload.array('files'
       return res.status(400).json({ message: 'Empty message' });
     }
 
-    // Build combined content (file text + user text) for the API
     let combinedText = '';
     const attachmentMeta = [];
     for (const f of files) {
-      const txt = await extractFileText(f);
-      combinedText += `<attached_file name="${f.originalname}">\n${txt}\n</attached_file>\n\n`;
-      attachmentMeta.push({ name: f.originalname, mimeType: f.mimetype, size: f.size });
+      const { text, keepBinary } = await extractFileContent(f);
+      combinedText += `<attached_file name="${f.originalname}">\n${text}\n</attached_file>\n\n`;
+      attachmentMeta.push({
+        name: f.originalname,
+        mimeType: f.mimetype,
+        size: f.size,
+        binary: keepBinary ? f.buffer : null
+      });
     }
     combinedText += userText;
 
-    // Persist the user message
     conv.messages.push({
       role: 'user',
       content: combinedText,
@@ -194,7 +224,6 @@ router.post('/conversations/:id/message', auth, gateKeeper, upload.array('files'
       timestamp: new Date()
     });
 
-    // Build the Anthropic request
     const apiMessages = conv.messages.map(m => ({
       role: m.role,
       content: m.content
@@ -209,7 +238,6 @@ router.post('/conversations/:id/message', auth, gateKeeper, upload.array('files'
 
     if (conv.thinkingEnabled) {
       apiPayload.thinking = { type: 'enabled', budget_tokens: conv.thinkingBudget };
-      // Note: temperature must NOT be set when thinking is enabled.
     }
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -228,7 +256,6 @@ router.post('/conversations/:id/message', auth, gateKeeper, upload.array('files'
     const data = await anthropicRes.json();
 
     if (!anthropicRes.ok) {
-      // Roll back the user message we just added so it can be retried
       conv.messages.pop();
       await conv.save();
       return res.status(anthropicRes.status).json({
@@ -237,7 +264,6 @@ router.post('/conversations/:id/message', auth, gateKeeper, upload.array('files'
       });
     }
 
-    // Extract text + thinking blocks from response
     const textBlocks = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
     const thinkingBlocks = (data.content || []).filter(b => b.type === 'thinking').map(b => b.thinking).join('\n');
 
@@ -250,19 +276,105 @@ router.post('/conversations/:id/message', auth, gateKeeper, upload.array('files'
       timestamp: new Date()
     });
 
-    // Auto-title from first user message
     if (conv.title === 'New conversation' && userText) {
       conv.title = userText.slice(0, 60).replace(/\s+/g, ' ').trim();
     }
 
     await conv.save();
+
+    // Strip binaries from response payload
+    const convOut = conv.toObject();
+    convOut.messages.forEach(m => {
+      if (m.attachments) m.attachments.forEach(a => { delete a.binary; });
+    });
+
     res.json({
-      conversation: conv,
-      assistantMessage: conv.messages[conv.messages.length - 1]
+      conversation: convOut,
+      assistantMessage: convOut.messages[convOut.messages.length - 1]
     });
   } catch (e) {
     console.error('message error:', e);
     res.status(500).json({ message: e.message });
+  }
+});
+
+// ── Export an assistant message as .docx via pandoc ──
+// Uses the most recent uploaded .docx in the conversation as a pandoc
+// reference-doc to apply that template's styles (fonts, headings, etc.).
+// Falls back to generic styling if no .docx template found.
+router.post('/conversations/:id/messages/:idx/export', auth, gateKeeper, async (req, res) => {
+  let tmpDir;
+  try {
+    const conv = await Conversation.findOne({ _id: req.params.id, userId: req.user.id });
+    if (!conv) return res.status(404).json({ message: 'Not found' });
+
+    const idx = parseInt(req.params.idx, 10);
+    const msg = conv.messages[idx];
+    if (!msg || msg.role !== 'assistant') {
+      return res.status(400).json({ message: 'Invalid message index (must point to an assistant message)' });
+    }
+
+    // Walk back through messages to find the most recent docx with stored binary
+    let templateBinary = null;
+    let templateName = null;
+    for (let i = idx - 1; i >= 0; i--) {
+      const m = conv.messages[i];
+      if (m.attachments && m.attachments.length) {
+        for (const a of m.attachments) {
+          if (a.name?.toLowerCase().endsWith('.docx') && a.binary && a.binary.length > 0) {
+            templateBinary = a.binary;
+            templateName = a.name;
+            break;
+          }
+        }
+      }
+      if (templateBinary) break;
+    }
+
+    // Create a temp working directory
+    tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'wb-export-'));
+    const mdPath  = path.join(tmpDir, 'input.md');
+    const outPath = path.join(tmpDir, 'output.docx');
+    await fsp.writeFile(mdPath, msg.content, 'utf8');
+
+    const args = [mdPath, '-o', outPath, '-f', 'markdown', '-t', 'docx'];
+
+    if (templateBinary) {
+      const tplPath = path.join(tmpDir, 'template.docx');
+      await fsp.writeFile(tplPath, templateBinary);
+      args.push(`--reference-doc=${tplPath}`);
+    }
+
+    // Run pandoc
+    try {
+      await execFileAsync(PANDOC, args, { timeout: 30000 });
+    } catch (e) {
+      console.error('pandoc error:', e);
+      return res.status(500).json({
+        message: `Pandoc failed: ${e.message}`,
+        hint: 'Check that pandoc is installed at ' + PANDOC + ' (run scripts/install-pandoc.sh on Render)'
+      });
+    }
+
+    const buf = await fsp.readFile(outPath);
+
+    // Filename: derive from conversation title or template name
+    const safeTitle = (conv.title || 'sop')
+      .replace(/[^a-zA-Z0-9._-]/g, '_')
+      .slice(0, 60);
+    const filename = `${safeTitle}-${Date.now()}.docx`;
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Template-Used', templateName || 'none');
+    res.send(buf);
+  } catch (e) {
+    console.error('export error:', e);
+    res.status(500).json({ message: e.message });
+  } finally {
+    if (tmpDir) {
+      fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    }
   }
 });
 
