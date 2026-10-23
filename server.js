@@ -8,7 +8,11 @@ const app = express();
 // Middleware
 app.use(cors({
   origin: function(origin, callback) {
-    const allowedOrigins = process.env.CORS_ORIGIN.split(',');
+    // Ignore stray spaces and trailing slashes in the comma-separated list
+    const allowedOrigins = process.env.CORS_ORIGIN
+      .split(',')
+      .map(o => o.trim().replace(/\/+$/, ''))
+      .filter(Boolean);
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     if (allowedOrigins.indexOf(origin) !== -1) {
